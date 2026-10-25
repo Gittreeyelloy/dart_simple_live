@@ -1,0 +1,114 @@
+name: build-simple-live
+
+# 手动触发（workflow_dispatch 只认默认分支上的工作流文件）。
+# 文件放在 master，就构建 master 的代码；checkout 默认跟随触发分支，不用写 ref。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-simple-live
+  cancel-in-progress: true
+
+jobs:
+  # ───────────────────────── Android APK ─────────────────────────
+  android:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: "17"
+          cache: gradle
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;35.0.0
+            ndk;28.2.13676358
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          # 版本跟随仓库里的 .fvmrc（master 上是 3.38.3），不用手改
+          flutter-version-file: simple_live_app/.fvmrc
+          cache: true
+
+      - name: 配置 JDK
+        run: flutter config --jdk-dir "$JAVA_HOME"
+
+      # 上游 release 构建需要签名，否则产出的 APK 是 unsigned，装不上。
+      # 这里现场生成一个自用证书，省掉配置 secrets。
+      - name: 生成自签名证书
+        working-directory: simple_live_app/android
+        run: |
+          keytool -genkeypair -v -keystore self.keystore \
+            -storepass android -alias selfkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=SimpleLive, O=Self, C=CN"
+          printf 'storeFile=../self.keystore\nstorePassword=android\nkeyPassword=android\nkeyAlias=selfkey\n' > key.properties
+
+      - name: flutter pub get
+        working-directory: simple_live_app
+        run: flutter pub get
+
+      - name: 编译 APK
+        working-directory: simple_live_app
+        run: flutter build apk --release --split-per-abi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: simple-live-android
+          if-no-files-found: error
+          path: |
+            simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            simple_live_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            simple_live_app/build/app/outputs/flutter-apk/app-x86_64-release.apk
+
+  # ───────────────────────── Windows 免安装包 ─────────────────────────
+  windows:
+    name: Windows 免安装版
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version-file: simple_live_app/.fvmrc
+          cache: true
+
+      - name: 启用 Windows 桌面支持
+        run: flutter config --enable-windows-desktop
+
+      - name: flutter pub get
+        working-directory: simple_live_app
+        run: flutter pub get
+
+      - name: 编译 Windows
+        working-directory: simple_live_app
+        run: flutter build windows --release
+
+      - name: 打包 zip
+        shell: pwsh
+        working-directory: simple_live_app
+        run: |
+          $rel = Get-ChildItem build\windows -Recurse -Directory -Filter Release | Select-Object -First 1
+          if (-not $rel) { throw "找不到 Release 输出目录" }
+          Compress-Archive -Path (Join-Path $rel.FullName '*') -DestinationPath "build\simple-live-windows.zip" -Force
+          Get-Item "build\simple-live-windows.zip" | Select-Object FullName, Length
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: simple-live-windows
+          if-no-files-found: error
+          path: simple_live_app/build/simple-live-windows.zip
