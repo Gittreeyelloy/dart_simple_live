@@ -57,15 +57,16 @@ jobs:
           printf 'storeFile=../self.keystore\nstorePassword=android\nkeyPassword=android\nkeyAlias=selfkey\n' > key.properties
 
       - name: 锁定 4 个 Gradle 脚本损坏的依赖
-        # 2026-10 这批新版本（auto_orientation_v2 2.4.7 / dynamic_color 1.9.0 /
+        # 2026-10 这批新版本（auto_orientation_v2 2.4.x / dynamic_color 1.9.0 /
         # qr_code_scanner_plus 2.2.0+ / volume_controller 3.6.0+）在 android 脚本里
         # 写了 kotlin{} 却没 apply Kotlin 插件，assembleRelease 直接失败。
-        # 下面锁定到各自最后一个正常版本。
+        # auto_orientation_v2 2.4.x 的源码是 Kotlin（插件永远不会被编译），
+        # 退到 2.3.6 —— 纯 Java 实现，Dart API 完全一致。
         run: |
           cat >> simple_live_app/pubspec.yaml <<'EOF'
 
           dependency_overrides:
-            auto_orientation_v2: 2.4.6
+            auto_orientation_v2: 2.3.6
             dynamic_color: 1.8.1
             qr_code_scanner_plus: 2.1.2
             volume_controller: 3.5.0
