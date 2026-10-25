@@ -59,7 +59,12 @@ jobs:
       - name: 锁定 auto_orientation_v2 2.4.6
         # 2.4.7（2026-10-08 发布）的 android/build.gradle 里用了 kotlin{} 但没 apply
         # Kotlin 插件，且 buildscript 钉了 AGP 9.4.1，导致 assembleRelease 直接失败。
-        run: printf '\ndependency_overrides:\n  auto_orientation_v2: 2.4.6\n' >> simple_live_app/pubspec.yaml
+        run: |
+          cat >> simple_live_app/pubspec.yaml <<'EOF'
+
+          dependency_overrides:
+            auto_orientation_v2: 2.4.6
+          EOF
 
       - name: flutter pub get
         working-directory: simple_live_app
