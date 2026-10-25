@@ -56,6 +56,11 @@ jobs:
             -dname "CN=SimpleLive, O=Self, C=CN"
           printf 'storeFile=../self.keystore\nstorePassword=android\nkeyPassword=android\nkeyAlias=selfkey\n' > key.properties
 
+      - name: 锁定 auto_orientation_v2 2.4.6
+        # 2.4.7（2026-10-08 发布）的 android/build.gradle 里用了 kotlin{} 但没 apply
+        # Kotlin 插件，且 buildscript 钉了 AGP 9.4.1，导致 assembleRelease 直接失败。
+        run: printf '\ndependency_overrides:\n  auto_orientation_v2: 2.4.6\n' >> simple_live_app/pubspec.yaml
+
       - name: flutter pub get
         working-directory: simple_live_app
         run: flutter pub get
@@ -102,10 +107,17 @@ jobs:
         shell: pwsh
         working-directory: simple_live_app
         run: |
-          $rel = Get-ChildItem build\windows -Recurse -Directory -Filter Release | Select-Object -First 1
-          if (-not $rel) { throw "找不到 Release 输出目录" }
-          Compress-Archive -Path (Join-Path $rel.FullName '*') -DestinationPath "build\simple-live-windows.zip" -Force
-          Get-Item "build\simple-live-windows.zip" | Select-Object FullName, Length
+          $exe = Get-ChildItem build\windows -Recurse -Filter simple_live_app.exe | Select-Object -First 1
+          if (-not $exe) { throw "找不到 simple_live_app.exe" }
+          $rel = $exe.Directory
+          "打包目录: $($rel.FullName)"
+          $zip = Join-Path (Resolve-Path "build").Path "simple-live-windows.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          [System.IO.Compression.ZipFile]::CreateFromDirectory($rel.FullName, $zip)
+          $size = (Get-Item $zip).Length
+          "zip 大小: {0:N1} MB" -f ($size / 1MB)
+          if ($size -lt 5MB) { throw "zip 太小（$size 字节），打包目录选错了" }
+          Get-ChildItem $rel.FullName | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v7
         with:
